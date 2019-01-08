@@ -254,11 +254,9 @@ r2_score(y_true = data_test$yield_anomaly, y_pred = yhat)
 
 classList <- c("car", "cat", "flower")
 
-# image size to scale down to
-img_width <- 20
-img_height <- 20
-target_size <- c(img_width, img_height)
-channels <- NROW(classList)
+##### PARAMETERS
+
+target_size <- c(20, 20)
 
 # path to image folders
 train_image_files_path <- "images_train/Train"
@@ -268,6 +266,8 @@ valid_image_files_path <- "images_train/Test"
 data_gen_rescale <- image_data_generator(
   rescale = 1/255
 )
+
+##### DATA LOADING (Training and validation)
 
 train_image_array_gen <- flow_images_from_directory(directory = train_image_files_path,
                                                     generator = data_gen_rescale, 
@@ -279,7 +279,6 @@ valid_image_array_gen <- flow_images_from_directory(directory = valid_image_file
                                                     target_size = target_size,
                                                     classes = classList)
 
-### model definition
 cat("number of training samples = ", train_image_array_gen$n)
 cat("number of validation samples = ", valid_image_array_gen$n)
 
@@ -288,11 +287,11 @@ cat("number of validation samples = ", valid_image_array_gen$n)
 
 
 ```{r}
-### Définition et entrainement du RN
+##### Définition et entrainement du RN
 
 model <- keras_model_sequential()
 model %>%
-  layer_flatten(input_shape = c(img_width, img_height, channels)) %>%
+  layer_flatten(input_shape = c(20, 20, 3)) %>%
   layer_dense(units = 128, activation = 'relu') %>%
   layer_dense(units = channels, activation = 'softmax') #softmax for probabilities of belonging
 
@@ -359,8 +358,68 @@ resizedImage3d <- adrop(resizedImage,3)
 ## PB au niveau de la transfo de l'image et de l'input au RN
 
 
+
+```
+```{r}
+## Test de ResNet50
+model <- application_resnet50(weights = 'imagenet')
+
+img_path <- "C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg"
+img <- image_load(img_path, target_size = c(20,20))
+x <- image_to_array(img)
+x <- array_reshape(x, c(1, dim(x)))
+
+
+x <- imagenet_preprocess_input(x)
+
+preds <- model %>% predict(x)
+imagenet_decode_predictions(preds, top = 10)[[1]]
+?imagenet_decode_predictions
+
+
+
 ```
 
 
+Classifieur home_made V2
+```{r}
 
+classifieur_images_rnn <- function(dataset) { 
+  #dataset = vecteur de chemins vers les images
+
+  cat("Predicting the class of ", NROW(dataset), " images among car, cat, flower")
+  
+  ### Loading and transforming images
+  images <- lapply(dataset, function(x) image_load(x, target_size = c(20,20)))
+  images <- lapply(images, function(x) image_to_array(x))
+  images <- lapply(images, function(x) array_reshape(x, c(1, dim(x))))
+  
+  ### Predictions
+  predictions <- lapply(images, function(x) {
+    model$predict(x)
+  })
+
+  ### Manque la partie which.max
+}
+
+ser <- serialize_model(model)
+
+load("dataTp.Rdata")
+model$load_weights("test.Rdata")
+
+
+```
+
+```{r}
+a <- classifieur_images_rnn(c("C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg", 
+                     "C:/Users/cyril/Desktop/test cycy/all/car_train_19.jpg"
+                     ))
+
+
+  img <- image_load("C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg", target_size = c(20,20))
+  x <- image_to_array(img)
+  x <- array_reshape(x, c(1, dim(x)))
+
+
+```
 
