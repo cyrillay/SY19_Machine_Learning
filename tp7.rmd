@@ -1,0 +1,366 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+
+```{r}
+
+perf <- function(y_true, y_pred) {
+  print(table(y_true,y_pred))
+  cat("Taux de réussite :")
+  mean(y_true==y_pred)
+}
+
+cross_validation <- function(data, model, reps) {
+K<-10
+reps <- 2
+MSE<-rep(0,reps)
+for (i in (1:reps)) {
+  folds=sample(1:K,nrow(data),replace=TRUE)
+  CV<-rep(0,K)
+  for(k in (1:K)){
+    fit<-model(yield_anomaly~.,data=data[folds!=k,]) # fit 9 blocks
+    pred<-predict(fit,newdata=data[folds==k,]) # evaluate on 1 block
+    CV[k]<-sum((data[folds==k,'yield_anomaly']-pred)^2)/nrow(data[folds==k,])
+  }
+  MSE[i] <- mean(CV)
+}
+MSE<- mean(MSE)
+
+}
+
+
+
+```
+
+
+CLASSIFICATION
+
+```{r}
+library(MASS)
+data <- read.csv("astronomy_train.csv")
+data$class <- factor(data$class)
+
+#Remove objid et rerun : constants
+# attention certaines variables sont correlées
+data<-data[,-c(1,10)]
+nRows <- nrow(data)
+
+sample<-sample(nRows, 60*nRows/100)
+
+data_train <- data[sample,]
+data_test <- data[-sample,]
+
+##### QDA
+qda.astro<- qda(class~.,data=data_train)
+qda.pred<-predict(qda.astro,newdata=data_test)
+perf <-table(data_test$class,qda.pred$class)
+qda.error <- 1-sum(diag(perf))/NROW(data_test)
+##### END QDA
+
+
+#scaled_data_X <- as.data.frame(scale(data_X))
+#head(scaled_data_X)
+
+library('leaps')
+#reg.fit<-regsubsets(data$class~.,data=data,method='exhaustive')
+#plot(reg.fit,scale="r2") 
+
+
+#### NAIVE BAYES
+library('e1071')
+naive.astro<- naiveBayes(class~.,data=data_train)
+naive.pred<-predict(naive.astro,newdata=data_test)
+summary(naive.pred)
+naive.perf <-table(data_test$class,naive.pred)
+naive.error <- 1-sum(diag(naive.perf))/NROW(data_test)
+#### END BAYES
+
+
+#### GLM (binomial logistic regression)
+# not adapted because we have three classes and not 2
+##### END GLM
+
+#### Multinomial regression
+library(nnet)
+multinom.astro<-multinom(class~.,data=data_train)
+multinom.pred<-predict(multinom.astro,newdata=data_train)
+perf(data_train$class,multinom.pred)
+1-sum(diag(multinom.perf))/NROW(data_test)
+##### End Multinomial regression
+
+
+#### SVM
+## performs well with polynomial kernel (>99% of performance)
+ksvmClassModel<- ksvm(class~ ., data = data, type="C-svc", C=10, cross=5)
+pred.svm <- predict(ksvmClassModel, newdata = data_test[,-12])
+1 - perf(y_true = data_test$class, y_pred = pred.svm)
+erreur_cv <- ksvmClassModel@cross
+
+svmfit <- ksvm(data$class~ ., data = data, kernel = "polydot", cross = 5, type="C-svc", C=1000)
+svmfit@cross
+
+
+##### Random Forest
+# Decision trees with or without bagging should always have lower performance than random forests, that's why i'm not testing them
+library(randomForest)
+randomForest.fit<-randomForest(class~.,data=data,subset=sample)
+randomForest.pred=predict(randomForest.fit,newdata=data_test,type='response')
+1 - perf(data_test$class,randomForest.pred)
+#### End Random Forest
+
+
+```
+
+
+REGRESSION
+
+```{r}
+data<-read.csv("mais_train.csv")
+head(data)
+#cor(data)
+nRows <- nrow(data)
+sample<-sample(nRows, 60*nRows/100)
+data_train <- data[sample,]
+data_test <- data[-sample,]
+
+## Calculate R²
+r2_score <- function(y_true, y_pred) {
+  # https://stackoverflow.com/questions/40901445/function-to-calculate-r2-r-squared-in-r
+  y_true <- as.numeric(y_true)
+  y_pred <- as.numeric(y_pred)
+  (cor(y_true, y_pred) ^ 2)
+}
+
+
+#### MODEL SELECTION
+library(leaps)
+
+subsets<-regsubsets(yield_anomaly~.,data=data,method='forward',nvmax=16)
+sum<-summary(subsets)
+plot(subsets,scale="r2")
+plot(subsets,scale="bic") 
+
+Formula <- c(
+  yield_anomaly~.,
+  yield_anomaly~IRR+ETP_3+ETP_4+ETP_6+ ETP_7+ ETP_8+ ETP_9+ PR_2+ PR_5+ PR_6+ PR_7+ PR_8+ RV_1+ RV_3+ RV_6+ RV_7+ RV_8+ RV_9+ SeqPR_2+SeqPR_3+SeqPR_4+SeqPR_5+Tx_3+Tx_4+Tx_8+Tx_9, ##linear regression
+  yield_anomaly~ETP_1+ETP_3+ETP_7+ETP_8+PR_5+PR_6+ PR_7+ PR_8+RV_1+SeqPR_5+Tn_2+Tn_1+Tn_5+Tn_6+Tx_4+Tx_8, ##regsubsets with R?
+  yield_anomaly~+ETP_1+ETP_3+ETP_7+ETP_8+PR_5+PR_6+PR_7+PR_8+RV_1+SeqPR_5+Tn_1+Tn_2+Tn_5+Tn_6+Tx_4+Tx_8 ##regsubsets with BIC
+  )
+
+#### END OF MODEL SELECTION
+
+### PCA
+library(pls)
+pcr.fit<-pcr(yield_anomaly~.,data=data,scale=TRUE,validation="CV")
+summary(pcr.fit)
+validationplot(pcr.fit,val.type = "MSEP",legendpos = "topright")
+###
+
+
+### Linear Regression
+for (i in (1:NROW(Formula))){
+  print("------------------------")
+  print(Formula[[i]])
+  lm.adj <- lm(Formula[[i]], data=data)
+  print(summary(lm.adj)$r.squared)
+  print(summary(lm.adj)$adj.r.squared)
+  print(AIC(lm.adj))
+  print(BIC(lm.adj))
+}
+
+
+reg <- lm(yield_anomaly~., data=data_train)
+pred<-predict(reg,newdata=data_test)
+r2_score(y_true = data_test$yield_anomaly, y_pred = pred)
+err<-mean((data_test$yield_anomaly-pred)^2)
+### END OF LINEAR REGRESSION
+
+
+#### RANDOM FOREST REGRESSION
+library(randomForest)
+randomForest.fit<-randomForest(yield_anomaly~.,data=data,subset=sample, na.action=na.exclude)
+
+randomForest.pred=predict(randomForest.fit,newdata=data_test,type='response')
+
+table(data_test$yield_anomaly,randomForest.pred)
+err<-mean((data_test$yield_anomaly-randomForest.pred)^2)
+
+r2_score(y_true = data_test$yield_anomaly, y_pred = randomForest.pred)
+
+#### END OF RANDOM FOREST REGRESSION
+
+##Home made Cross Validation for Random Forest
+##Might not be necessary though 
+#https://datascience.stackexchange.com/questions/6510/does-modeling-with-random-forests-require-cross-validation
+
+K<-10
+reps <- 2
+MSE<-rep(0,reps)
+for (i in (1:reps)) {
+  folds=sample(1:K,nrow(data),replace=TRUE)
+  CV<-rep(0,K)
+  for(k in (1:K)){
+    rforest<-randomForest(yield_anomaly~.,data=data[folds!=k,]) # fit 9 blocks
+    pred<-predict(rforest,newdata=data[folds==k,]) # evaluate on 1 block
+    CV[k]<-sum((data[folds==k,'yield_anomaly']-pred)^2)/nrow(data[folds==k,])
+  }
+  MSE[i] <- mean(CV)
+}
+MSE<- mean(MSE)
+
+
+
+
+
+
+### Support Vector Regression
+##epsilon : accuracy desired
+## C : cost-function, to determine with CV
+
+library('kernlab')
+library('MASS')
+
+svmfit<-ksvm(yield_anomaly~.,data=data_train,scaled=FALSE,type="eps-svr",
+kernel="rbfdot",C=100,epsilon=0.01,kpar=list(sigma=1))
+yhat<-predict(svmfit,newdata=data_test)
+#plot(data$,data$yield_anomaly)
+#lines(t,yhat)
+#r2_score(y_true = data_test$yield_anomaly, y_pred = yhat)
+##todo : not calculate R2 but other
+
+
+
+
+svmfit<-ksvm(yield_anomaly~.,data=data_train,type="eps-svr", kernel="rbfdot", C=100, epsilon=0.1)
+yhat<-predict(svmfit,newdata=data_test)
+r2_score(y_true = data_test$yield_anomaly, y_pred = yhat)
+##R² de 0.35 en enlevant sans scaling
+
+```
+
+
+
+
+```{r}
+### RNN appliqué aux chats et voitures
+
+#setwd(dir = "Cyril/Etudes/Travail/GI04/SY19/TP 7")
+
+classList <- c("car", "cat", "flower")
+
+# image size to scale down to
+img_width <- 20
+img_height <- 20
+target_size <- c(img_width, img_height)
+channels <- NROW(classList)
+
+# path to image folders
+train_image_files_path <- "images_train/Train"
+valid_image_files_path <- "images_train/Test"
+
+# image modification or augmentation
+data_gen_rescale <- image_data_generator(
+  rescale = 1/255
+)
+
+train_image_array_gen <- flow_images_from_directory(directory = train_image_files_path,
+                                                    generator = data_gen_rescale, 
+                                                    target_size = target_size,
+                                                    classes = classList)
+
+valid_image_array_gen <- flow_images_from_directory(directory = valid_image_files_path,
+                                                    generator = data_gen_rescale, 
+                                                    target_size = target_size,
+                                                    classes = classList)
+
+### model definition
+cat("number of training samples = ", train_image_array_gen$n)
+cat("number of validation samples = ", valid_image_array_gen$n)
+
+
+```
+
+
+```{r}
+### Définition et entrainement du RN
+
+model <- keras_model_sequential()
+model %>%
+  layer_flatten(input_shape = c(img_width, img_height, channels)) %>%
+  layer_dense(units = 128, activation = 'relu') %>%
+  layer_dense(units = channels, activation = 'softmax') #softmax for probabilities of belonging
+
+
+model %>% compile(
+  optimizer = 'adam', 
+  loss = 'categorical_crossentropy',
+  metrics = c('accuracy')
+)
+
+
+# define batch size
+batch_size <- 32
+model$fit_generator(
+  generator = train_image_array_gen,
+  steps_per_epoch = as.integer(train_image_array_gen$n / batch_size), 
+  epochs = 5,
+  validation_data = valid_image_array_gen,
+  validation_steps = as.integer(valid_image_array_gen$n / batch_size),
+  verbose = 2
+  )
+
+```
+
+```{r}
+classifieur_images <- function(dataset) { 
+  #dataset = vecteur de chemins vers les images
+
+  cat("Predicting the class of ", NROW(dataset), " images among car, cat, flower")
+  
+  ### Loading and transforming images
+  images <- lapply(dataset, function(x) load.image(x))
+  images <- lapply(images, function(x) resize(x,20,20))
+  images <- lapply(images, function(x) (adrop(x, 3)))
+  
+  ### Predictions
+  predictions <- lapply(images, function(x) {
+    dim(x) <- cbind(1,nrow(x),ncol(x),3)
+    model$predict(x)
+  })
+
+  ### affecting an output from the probabilities and returning the class String
+  output <- lapply(predictions, function(x) {
+  maxIndex <- which.max(x)
+  classList[maxIndex]
+  }
+)
+
+  return(unlist(output))
+}
+
+
+res <- classifieur_images(c("C:/Users/cyril/Desktop/test cycy/all/cat_train_12.jpg", 
+                     "C:/Users/cyril/Desktop/test cycy/all/fleur3.jpg"
+                     ))
+
+res <- classifieur_images(list.files(path = "C:/Users/cyril/Desktop/test cycy/all/", full.names = TRUE))
+
+as.matrix(res)
+
+loadedImage <- load.image("C:/Users/cyril/Desktop/test cycy/all/car_train_30.jpg")
+resizedImage <- as.array(resize(loadedImage,20,20))
+resizedImage3d <- adrop(resizedImage,3)
+## PB au niveau de la transfo de l'image et de l'input au RN
+
+
+```
+
+
+
+
