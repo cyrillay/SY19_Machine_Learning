@@ -8,4 +8,4 @@
 Best models for now :
 * Regression : Random Forest regression (Mean squared error ~= 0.30)
 * Classification : SVM with polynomial kernel and C=10 (performance >99%)
-* Image recognition : 3 layer neural network, to be replaced with state of the art image network (https://github.com/tensorflow/models/blob/master/research/slim/nets/inception_resnet_v2.py)
+* Image recognition : 3 layer neural network, to be replaced with state of the art image network (https://github.com/tensorflow/models/blob/master/research/slim/nets/inception_resnet_v2.py, https://cran.rstudio.com/web/packages/keras/vignettes/applications.html)
