@@ -291,9 +291,9 @@ cat("number of validation samples = ", valid_image_array_gen$n)
 
 model <- keras_model_sequential()
 model %>%
-  layer_flatten(input_shape = c(20, 20, 3)) %>%
+  layer_flatten(input_shape = c(20, 20, 3)) %>% ## 20*20 : image size, 3 : number of channels (RGB in this case)
   layer_dense(units = 128, activation = 'relu') %>%
-  layer_dense(units = channels, activation = 'softmax') #softmax for probabilities of belonging
+  layer_dense(units = 3, activation = 'softmax') #softmax for probabilities of belonging
 
 
 model %>% compile(
@@ -316,56 +316,13 @@ model$fit_generator(
 
 ```
 
-```{r}
-classifieur_images <- function(dataset) { 
-  #dataset = vecteur de chemins vers les images
 
-  cat("Predicting the class of ", NROW(dataset), " images among car, cat, flower")
-  
-  ### Loading and transforming images
-  images <- lapply(dataset, function(x) load.image(x))
-  images <- lapply(images, function(x) resize(x,20,20))
-  images <- lapply(images, function(x) (adrop(x, 3)))
-  
-  ### Predictions
-  predictions <- lapply(images, function(x) {
-    dim(x) <- cbind(1,nrow(x),ncol(x),3)
-    model$predict(x)
-  })
-
-  ### affecting an output from the probabilities and returning the class String
-  output <- lapply(predictions, function(x) {
-  maxIndex <- which.max(x)
-  classList[maxIndex]
-  }
-)
-
-  return(unlist(output))
-}
-
-
-res <- classifieur_images(c("C:/Users/cyril/Desktop/test cycy/all/cat_train_12.jpg", 
-                     "C:/Users/cyril/Desktop/test cycy/all/fleur3.jpg"
-                     ))
-
-res <- classifieur_images(list.files(path = "C:/Users/cyril/Desktop/test cycy/all/", full.names = TRUE))
-
-as.matrix(res)
-
-loadedImage <- load.image("C:/Users/cyril/Desktop/test cycy/all/car_train_30.jpg")
-resizedImage <- as.array(resize(loadedImage,20,20))
-resizedImage3d <- adrop(resizedImage,3)
-## PB au niveau de la transfo de l'image et de l'input au RN
-
-
-
-```
 ```{r}
 ## Test de ResNet50
 model <- application_resnet50(weights = 'imagenet')
 
-img_path <- "C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg"
-img <- image_load(img_path, target_size = c(20,20))
+img_path <- "C:/Users/cyril/Desktop/test cycy/all/cat_train_13.jpg"
+img <- image_load(img_path, target_size = c(224,224))
 x <- image_to_array(img)
 x <- array_reshape(x, c(1, dim(x)))
 
@@ -373,8 +330,55 @@ x <- array_reshape(x, c(1, dim(x)))
 x <- imagenet_preprocess_input(x)
 
 preds <- model %>% predict(x)
-imagenet_decode_predictions(preds, top = 10)[[1]]
+imagenet_decode_predictions(preds, top = 15)[[1]]
 ?imagenet_decode_predictions
+
+# ajouter partie pour decoder les prédictions et attributer 1 si le top10 contains(car), 2 si cat ou 3 si
+
+```
+
+
+Classifieur ResNet50 V2
+```{r}
+
+classifieur_images_resNet50 <- function(dataset) { 
+  #dataset = vecteur de chemins vers les images
+
+  cat("Predicting the class of ", NROW(dataset), " images among car, cat, flower")
+  
+  ### Loading and transforming images
+  images <- lapply(dataset, function(x) image_load(x, target_size = c(224,224)))
+  images <- lapply(images, function(x) image_to_array(x))
+  images <- lapply(images, function(x) array_reshape(x, c(1, dim(x))))
+  
+  images <- lapply(images, function(x) imagenet_preprocess_input(x))
+  
+  ### Predictions
+  predictions <- lapply(images, function(x) {
+    model$predict(x)
+  })
+
+  ### affecting an output from the probabilities and returning the class String
+  output <- lapply(predictions, function(x) {
+    imagenet_decode_predictions(x, top = 15)[[1]]
+  })
+  
+  output <- lapply(output, function(x) {
+    if (length(grep("cat", x[2])) && length(grep("cardoon", x[2])) < 1)
+      "cat"
+    else if (length(grep("car", x[2])))
+      "car"
+    else
+      "flower"
+  })
+  #problem with cardoon
+  
+  unlist(output)
+  
+}
+
+
+a <- classifieur_images_resNet50(list.files(path = "C:/Users/cyril/Desktop/test cycy/all/", full.names = TRUE))
 
 
 
@@ -399,13 +403,14 @@ classifieur_images_rnn <- function(dataset) {
     model$predict(x)
   })
 
-  ### Manque la partie which.max
+  ### affecting an output from the probabilities and returning the class String
+  output <- lapply(predictions, function(x) {
+    maxIndex <- which.max(x)
+    c("car", "cat", "flower")[maxIndex]
+  })
+  
+  unlist(output)
 }
-
-ser <- serialize_model(model)
-
-load("dataTp.Rdata")
-model$load_weights("test.Rdata")
 
 
 ```
@@ -414,12 +419,22 @@ model$load_weights("test.Rdata")
 a <- classifieur_images_rnn(c("C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg", 
                      "C:/Users/cyril/Desktop/test cycy/all/car_train_19.jpg"
                      ))
+a
 
+
+a <- classifieur_images_rnn(list.files(path = "C:/Users/cyril/Desktop/test cycy/all/", full.names = TRUE))
 
   img <- image_load("C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg", target_size = c(20,20))
   x <- image_to_array(img)
   x <- array_reshape(x, c(1, dim(x)))
 
+
+```
+```{r}
+#### Saving or loading the model
+ser <- serialize_model(model)
+load("dataTp.Rdata")
+model$load_weights("test.Rdata")
 
 ```
 
