@@ -43,6 +43,7 @@ CLASSIFICATION
 
 ```{r}
 library(MASS)
+setwd(dir = "Cyril/Etudes/Travail/GI04/SY19/TP 7")
 data <- read.csv("astronomy_train.csv")
 data$class <- factor(data$class)
 
@@ -62,6 +63,8 @@ qda.pred<-predict(qda.astro,newdata=data_test)
 perf <-table(data_test$class,qda.pred$class)
 qda.error <- 1-sum(diag(perf))/NROW(data_test)
 ##### END QDA
+
+
 
 
 #scaled_data_X <- as.data.frame(scale(data_X))
@@ -97,6 +100,7 @@ perf(data_train$class,multinom.pred)
 
 #### SVM
 ## performs well with polynomial kernel (>99% of performance)
+
 ksvmClassModel<- ksvm(class~ ., data = data, type="C-svc", C=10, cross=5)
 pred.svm <- predict(ksvmClassModel, newdata = data_test[,-12])
 1 - perf(y_true = data_test$class, y_pred = pred.svm)
@@ -104,6 +108,7 @@ erreur_cv <- ksvmClassModel@cross
 
 svmfit <- ksvm(data$class~ ., data = data, kernel = "polydot", cross = 5, type="C-svc", C=1000)
 svmfit@cross
+#### End SVM
 
 
 ##### Random Forest
@@ -122,9 +127,10 @@ REGRESSION
 
 ```{r}
 data<-read.csv("mais_train.csv")
-head(data)
-#cor(data)
+#head(data)
+cor(data)
 nRows <- nrow(data)
+ncol <- ncol(data)
 sample<-sample(nRows, 60*nRows/100)
 data_train <- data[sample,]
 data_test <- data[-sample,]
@@ -143,25 +149,37 @@ library(leaps)
 
 subsets<-regsubsets(yield_anomaly~.,data=data,method='forward',nvmax=16)
 sum<-summary(subsets)
-plot(subsets,scale="r2")
+
+plot(subsets,scale="adjr2")
 plot(subsets,scale="bic") 
 
 Formula <- c(
   yield_anomaly~.,
   yield_anomaly~IRR+ETP_3+ETP_4+ETP_6+ ETP_7+ ETP_8+ ETP_9+ PR_2+ PR_5+ PR_6+ PR_7+ PR_8+ RV_1+ RV_3+ RV_6+ RV_7+ RV_8+ RV_9+ SeqPR_2+SeqPR_3+SeqPR_4+SeqPR_5+Tx_3+Tx_4+Tx_8+Tx_9, ##linear regression
-  yield_anomaly~ETP_1+ETP_3+ETP_7+ETP_8+PR_5+PR_6+ PR_7+ PR_8+RV_1+SeqPR_5+Tn_2+Tn_1+Tn_5+Tn_6+Tx_4+Tx_8, ##regsubsets with R?
-  yield_anomaly~+ETP_1+ETP_3+ETP_7+ETP_8+PR_5+PR_6+PR_7+PR_8+RV_1+SeqPR_5+Tn_1+Tn_2+Tn_5+Tn_6+Tx_4+Tx_8 ##regsubsets with BIC
+  yield_anomaly~ETP_1+ETP_3+ETP_7+ETP_8+PR_5+PR_6+ PR_7+ PR_8+RV_1+SeqPR_5+Tn_2+Tn_1+Tn_5+Tn_6+Tx_4+Tx_8,
+  yield_anomaly~+ETP_1+ETP_3+ETP_7+ETP_8+PR_5+PR_6+PR_7+PR_8+RV_1+SeqPR_5+Tn_1+Tn_2+Tn_5+Tn_6+Tx_4+Tx_8 ##regsubsets
   )
 
-#### END OF MODEL SELECTION
+
 
 ### PCA
 library(pls)
 pcr.fit<-pcr(yield_anomaly~.,data=data,scale=TRUE,validation="CV")
 summary(pcr.fit)
 validationplot(pcr.fit,val.type = "MSEP",legendpos = "topright")
+
+library("FactoMineR")
+res.pca <- PCA(data[, -3])
 ###
 
+### Ridge
+fit<-glmnet(x = model.matrix(yield_anomaly~.,data_train),y = data_train[, 3],alpha=0)
+ridge.pred<-predict(fit,newx=model.matrix(yield_anomaly~.,data_test[3]))
+err<-mean((data_test$yield_anomaly-ridge.pred)^2)
+
+###
+
+#### END OF MODEL SELECTION
 
 ### Linear Regression
 for (i in (1:NROW(Formula))){
@@ -175,10 +193,34 @@ for (i in (1:NROW(Formula))){
 }
 
 
-reg <- lm(yield_anomaly~., data=data_train)
+model <- lm(yield_anomaly~., data=data_train)
 pred<-predict(reg,newdata=data_test)
 r2_score(y_true = data_test$yield_anomaly, y_pred = pred)
 err<-mean((data_test$yield_anomaly-pred)^2)
+
+
+K<-10
+reps <- 10
+MSE<-rep(0,reps)
+r2<-rep(0,reps)
+for (i in (1:reps)) {
+  folds=sample(1:K,nrow(data),replace=TRUE)
+  CV<-rep(0,K)
+  CVR2<-rep(0,K)
+  for(k in (1:K)){
+    model<-lm(yield_anomaly~., data=data[folds!=k,]) # fit 9 blocks
+    pred<-predict(model,newdata=data[folds==k,]) # evaluate on 1 block
+    CV[k]<-sum((data[folds==k,'yield_anomaly']-pred)^2)/nrow(data[folds==k,])
+    CVR2[k] <- r2_score(y_true = data[folds==k,'yield_anomaly'], y_pred = pred)
+  }
+  MSE[i] <- mean(CV)
+  r2[i] <- mean(CVR2)
+}
+
+MSEmoy<- mean(MSE)
+R2moy <- mean(r2)
+
+
 ### END OF LINEAR REGRESSION
 
 
@@ -193,7 +235,7 @@ err<-mean((data_test$yield_anomaly-randomForest.pred)^2)
 
 r2_score(y_true = data_test$yield_anomaly, y_pred = randomForest.pred)
 
-#### END OF RANDOM FOREST REGRESSION
+
 
 ##Home made Cross Validation for Random Forest
 ##Might not be necessary though 
@@ -202,20 +244,27 @@ r2_score(y_true = data_test$yield_anomaly, y_pred = randomForest.pred)
 K<-10
 reps <- 2
 MSE<-rep(0,reps)
+r2 <- rep(0, reps)
 for (i in (1:reps)) {
   folds=sample(1:K,nrow(data),replace=TRUE)
   CV<-rep(0,K)
+  CVR2<-rep(0,K)
   for(k in (1:K)){
     rforest<-randomForest(yield_anomaly~.,data=data[folds!=k,]) # fit 9 blocks
     pred<-predict(rforest,newdata=data[folds==k,]) # evaluate on 1 block
     CV[k]<-sum((data[folds==k,'yield_anomaly']-pred)^2)/nrow(data[folds==k,])
+    CVR2[k] <- r2_score(y_true = data[folds==k,'yield_anomaly'], y_pred = pred)
   }
   MSE[i] <- mean(CV)
+  r2[i] <- mean(CVR2)
 }
-MSE<- mean(MSE)
+MSEmoy<- mean(MSE)
+R2moy <- mean(r2)
 
+int.ech(MSE)
+int.ech(r2)
 
-
+#### END OF RANDOM FOREST REGRESSION
 
 
 
@@ -226,21 +275,58 @@ MSE<- mean(MSE)
 library('kernlab')
 library('MASS')
 
-svmfit<-ksvm(yield_anomaly~.,data=data_train,scaled=FALSE,type="eps-svr",
-kernel="rbfdot",C=100,epsilon=0.01,kpar=list(sigma=1))
-yhat<-predict(svmfit,newdata=data_test)
-#plot(data$,data$yield_anomaly)
-#lines(t,yhat)
-#r2_score(y_true = data_test$yield_anomaly, y_pred = yhat)
-##todo : not calculate R2 but other
-
-
-
 
 svmfit<-ksvm(yield_anomaly~.,data=data_train,type="eps-svr", kernel="rbfdot", C=100, epsilon=0.1)
 yhat<-predict(svmfit,newdata=data_test)
+err<-mean((data_test$yield_anomaly-yhat)^2)
 r2_score(y_true = data_test$yield_anomaly, y_pred = yhat)
+
 ##R² de 0.35 en enlevant sans scaling
+
+
+### déterminer C
+CC<-c(0.01,0.1,1,10,100,1000)
+N<-length(CC)
+err<-rep(0,N)
+for(i in 1:N) {
+  err[i]<-cross(ksvm(yield_anomaly~.,data=data_train,type="eps-svr", kernel="rbfdot", C=CC[i], epsilon=0.1, cross = 5))
+}
+
+intervalle_95(err)
+
+
+
+plot(CC,err,type="b",log="x",xlab="C",ylab="CV error")
+
+
+K<-10
+reps <- 10
+MSE<-rep(0,reps)
+for (i in (1:reps)) {
+  folds=sample(1:K,nrow(data),replace=TRUE)
+  CV<-rep(0,K)
+  for(k in (1:K)){
+    model<- ksvm(yield_anomaly~.,data=data[folds!=k,],type="eps-svr", kernel="rbfdot", C=10, epsilon=0.1)
+    pred<-predict(model,newdata=data[folds==k,])
+    CV[k]<-sum((data[folds==k,'yield_anomaly']-pred)^2)/nrow(data[folds==k,])
+  }
+  MSE[i] <- mean(CV)
+}
+
+MSE<- mean(MSE)
+
+intervalle_95 <- function(x) {
+  moy <- mean(MSE)
+  ecartType <- sd(MSE)
+  borne_inf <- moy - 2* sd(MSE)/sqrt(length(MSE))
+  borne_sup <- moy + 2* sd(MSE)/sqrt(length(MSE))
+  c(borne_inf, borne_sup)
+}
+
+##todo : faire intervalle d'erreur à la main pour SVR et pour random Forest
+
+
+plot(data[1:10,]$X,data[1:10,]$yield_anomaly)
 
 ```
 
@@ -305,7 +391,7 @@ model %>% compile(
 
 # define batch size
 batch_size <- 32
-model$fit_generator(
+history <- model %>% fit_generator(
   generator = train_image_array_gen,
   steps_per_epoch = as.integer(train_image_array_gen$n / batch_size), 
   epochs = 5,
@@ -314,6 +400,9 @@ model$fit_generator(
   verbose = 2
   )
 
+plot(history)
+
+
 ```
 
 
@@ -321,7 +410,7 @@ model$fit_generator(
 ## Test de ResNet50
 model <- application_resnet50(weights = 'imagenet')
 
-img_path <- "C:/Users/cyril/Desktop/test cycy/all/cat_train_13.jpg"
+img_path <- "C:/Users/cyril/Desktop/test cycy/all/flower_train_5.jpg"
 img <- image_load(img_path, target_size = c(224,224))
 x <- image_to_array(img)
 x <- array_reshape(x, c(1, dim(x)))
@@ -332,8 +421,6 @@ x <- imagenet_preprocess_input(x)
 preds <- model %>% predict(x)
 imagenet_decode_predictions(preds, top = 15)[[1]]
 ?imagenet_decode_predictions
-
-# ajouter partie pour decoder les prédictions et attributer 1 si le top10 contains(car), 2 si cat ou 3 si
 
 ```
 
@@ -366,7 +453,7 @@ classifieur_images_resNet50 <- function(dataset) {
   output <- lapply(output, function(x) {
     if (length(grep("cat", x[2])) && length(grep("cardoon", x[2])) < 1)
       "cat"
-    else if (length(grep("car", x[2])))
+    else if (length(grep("car", x[2])) || length(grep("vehicle", x[2])) || length(grep("van", x[2])))
       "car"
     else
       "flower"
@@ -380,7 +467,7 @@ classifieur_images_resNet50 <- function(dataset) {
 
 a <- classifieur_images_resNet50(list.files(path = "C:/Users/cyril/Desktop/test cycy/all/", full.names = TRUE))
 
-
+as.matrix(a)
 
 ```
 
@@ -417,16 +504,25 @@ classifieur_images_rnn <- function(dataset) {
 
 ```{r}
 a <- classifieur_images_rnn(c("C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg", 
-                     "C:/Users/cyril/Desktop/test cycy/all/car_train_19.jpg"
+                     "C:/Users/cyril/Desktop/test cycy/all/car_train_19.jpg",
+                     "C:/Users/cyril/Desktop/test cycy/all/cat_train_8.jpg",
+                     "C:/Users/cyril/Desktop/test cycy/all/car_train_27.jpg",
+                     "C:/Users/cyril/Desktop/test cycy/all/cat_train_19.jpg",
+                     "C:/Users/cyril/Desktop/test cycy/all/flower_train_17.jpg"
                      ))
 a
 
 
 a <- classifieur_images_rnn(list.files(path = "C:/Users/cyril/Desktop/test cycy/all/", full.names = TRUE))
+as.matrix(a)
 
-  img <- image_load("C:/Users/cyril/Desktop/test cycy/all/flower_train_20.jpg", target_size = c(20,20))
-  x <- image_to_array(img)
-  x <- array_reshape(x, c(1, dim(x)))
+
+
+img <- image_load("C:/Users/cyril/Desktop/test cycy/all/car_train_26.jpg", target_size = c(20,20))
+x <- image_to_array(img)
+x <- array_reshape(x, c(1, dim(x)))
+
+a <- classifieur_images_rnn()
 
 
 ```
